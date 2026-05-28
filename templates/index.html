@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Система поддержки выбора поставщика</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  {% if api_key %}
+  <script src="https://api-maps.yandex.ru/2.1/?apikey={{ api_key }}&lang=ru_RU"></script>
+  {% endif %}
+</head>
+<body>
+  <header class="hero py-4 mb-4">
+    <div class="container">
+      <p class="text-uppercase small text-muted mb-1">Decision Support System</p>
+      <h1 class="mb-2">Система поддержки выбора поставщика</h1>
+      <p class="lead mb-0">Многокритериальный выбор связки «завод + транспортная компания» с расчетом весов и ранжированием TOPSIS.</p>
+    </div>
+  </header>
+
+  <main class="container pb-5">
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('calc') }}" enctype="multipart/form-data">
+      <section class="card section-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <div>
+              <h2 class="h4">Параметры заказчика</h2>
+              <p class="text-muted mb-0">Базовая точка поставки и окно приемки.</p>
+            </div>
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('download_template') }}">Скачать XLSX-шаблон</a>
+          </div>
+          <div class="row g-3 mt-1">
+            <div class="col-md-4">
+              <label class="form-label">Название заказчика</label>
+              <input class="form-control" name="customer_name" value="{{ customer.name }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Адрес</label>
+              <input class="form-control" name="customer_address" value="{{ customer.address }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Широта</label>
+              <input class="form-control" name="customer_lat" value="{{ customer.lat }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Долгота</label>
+              <input class="form-control" name="customer_lon" value="{{ customer.lon }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Окно приемки</label>
+              <input class="form-control" name="customer_acceptance_window" value="{{ customer.acceptance_window }}">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section-card mb-4">
+        <div class="card-body">
+          <h2 class="h4">Глобальные ограничения</h2>
+          <div class="row g-3 mt-1">
+            <div class="col-md-2">
+              <label class="form-label">Вместимость, м³</label>
+              <input class="form-control" name="capacity_m3" value="{{ globals_cfg.capacity_m3 }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Грузоподъемность, кг</label>
+              <input class="form-control" name="capacity_kg" value="{{ globals_cfg.capacity_kg }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Бюджет, руб.</label>
+              <input class="form-control" name="budget_rub" value="{{ globals_cfg.budget_rub }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Макс. тариф, руб./км</label>
+              <input class="form-control" name="max_cost_per_km" value="{{ globals_cfg.max_cost_per_km }}">
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Макс. время, дней</label>
+              <input class="form-control" name="max_time_days" value="{{ globals_cfg.max_time_days }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" name="require_tracking" id="require_tracking" {% if globals_cfg.require_tracking %}checked{% endif %}>
+                <label class="form-check-label" for="require_tracking">Требовать tracking</label>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Фильтр надежности</label>
+              <select class="form-select" name="reliability_filter_mode">
+                <option value="none" {% if globals_cfg.reliability_filter_mode == 'none' %}selected{% endif %}>Не применять</option>
+                <option value="separate" {% if globals_cfg.reliability_filter_mode == 'separate' %}selected{% endif %}>Завод и перевозчик отдельно</option>
+                <option value="composite" {% if globals_cfg.reliability_filter_mode == 'composite' %}selected{% endif %}>Совокупная надежность</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Мин. надежность завода, %</label>
+              <input class="form-control" name="min_manufacturer_reliability" value="{{ globals_cfg.min_manufacturer_reliability }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Мин. надежность перевозчика, %</label>
+              <input class="form-control" name="min_carrier_reliability" value="{{ globals_cfg.min_carrier_reliability }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Мин. совокупная надежность, %</label>
+              <input class="form-control" name="min_composite_reliability" value="{{ globals_cfg.min_composite_reliability }}">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section-card mb-4">
+        <div class="card-body">
+          <h2 class="h4">Метод расчета весов</h2>
+          <div class="row g-3 mt-1">
+            <div class="col-md-4">
+              <label class="form-label">Метод</label>
+              <select class="form-select" name="weight_method" id="weight_method" onchange="toggleAHPBlock()">
+                <option value="variance" {% if weight_cfg.method == 'variance' %}selected{% endif %}>Дисперсионный метод</option>
+                <option value="entropy" {% if weight_cfg.method == 'entropy' %}selected{% endif %}>Энтропийный метод</option>
+                <option value="ahp" {% if weight_cfg.method == 'ahp' %}selected{% endif %}>AHP</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="ahpBlock" class="mt-3 {% if weight_cfg.method != 'ahp' %}d-none{% endif %}">
+            <p class="text-muted mb-2">Попарные сравнения критериев. Значение больше 1 означает, что первый критерий важнее второго.</p>
+            <div class="row g-3">
+              <div class="col-md-2"><label class="form-label">Стоимость / Время</label><input class="form-control" name="ahp_cost_time" value="{{ weight_cfg.ahp_cost_time }}"></div>
+              <div class="col-md-2"><label class="form-label">Стоимость / Надежность</label><input class="form-control" name="ahp_cost_reliability" value="{{ weight_cfg.ahp_cost_reliability }}"></div>
+              <div class="col-md-2"><label class="form-label">Стоимость / Дистанция</label><input class="form-control" name="ahp_cost_distance" value="{{ weight_cfg.ahp_cost_distance }}"></div>
+              <div class="col-md-2"><label class="form-label">Время / Надежность</label><input class="form-control" name="ahp_time_reliability" value="{{ weight_cfg.ahp_time_reliability }}"></div>
+              <div class="col-md-2"><label class="form-label">Время / Дистанция</label><input class="form-control" name="ahp_time_distance" value="{{ weight_cfg.ahp_time_distance }}"></div>
+              <div class="col-md-2"><label class="form-label">Надежность / Дистанция</label><input class="form-control" name="ahp_reliability_distance" value="{{ weight_cfg.ahp_reliability_distance }}"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div>
+              <h2 class="h4 mb-1">Заводы-изготовители</h2>
+              <p class="text-muted mb-0">Можно заполнить вручную или загрузить CSV/XLSX/XLS с теми же колонками.</p>
+            </div>
+            <button class="btn btn-outline-primary btn-sm" type="button" onclick="addFactoryRow()">Добавить завод</button>
+          </div>
+          <div class="mb-3">
+            <input class="form-control" type="file" name="factories_file" accept=".csv,.xlsx,.xls">
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle" id="factoriesTable">
+              <thead>
+                <tr>
+                  <th>manufacturer</th><th>product</th><th>city</th><th>address</th><th>lat</th><th>lon</th><th>distance_km</th><th>transport_time_days</th><th>weekly_quantity_units</th><th>unit_weight_kg</th><th>unit_volume_m3</th><th>manufacturer_reliability</th><th>purchase_price_per_unit</th><th>shipping_window</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for f in factories %}
+                <tr>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_manufacturer[]" value="{{ f.manufacturer }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_product[]" value="{{ f.product }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_city[]" value="{{ f.city }}"></td>
+                  <td><input class="form-control form-control-sm wide-input" name="factory_address[]" value="{{ f.address }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_lat[]" value="{{ f.lat }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_lon[]" value="{{ f.lon }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_distance_km[]" value="{{ f.distance_km }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_transport_time_days[]" value="{{ f.transport_time_days }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_weekly_quantity_units[]" value="{{ f.weekly_quantity_units }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_unit_weight_kg[]" value="{{ f.unit_weight_kg }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_unit_volume_m3[]" value="{{ f.unit_volume_m3 }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_manufacturer_reliability[]" value="{{ f.manufacturer_reliability }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="factory_purchase_price_per_unit[]" value="{{ f.purchase_price_per_unit }}"></td>
+                  <td><input class="form-control form-control-sm wide-input" name="factory_shipping_window[]" value="{{ f.shipping_window }}"></td>
+                  <td><button class="btn btn-sm btn-outline-danger" type="button" onclick="removeRow(this)">×</button></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div>
+              <h2 class="h4 mb-1">Транспортные компании</h2>
+              <p class="text-muted mb-0">Тариф, надежность, наличие tracking и скорость доставки.</p>
+            </div>
+            <button class="btn btn-outline-primary btn-sm" type="button" onclick="addCarrierRow()">Добавить перевозчика</button>
+          </div>
+          <div class="mb-3">
+            <input class="form-control" type="file" name="carriers_file" accept=".csv,.xlsx,.xls">
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle" id="carriersTable">
+              <thead>
+                <tr><th>name</th><th>base_city</th><th>cost_per_km</th><th>reliability</th><th>tracking</th><th>speed_kmh</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for c in carriers %}
+                <tr>
+                  <td><input class="form-control form-control-sm mini-input" name="carrier_name[]" value="{{ c.name }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="carrier_base_city[]" value="{{ c.base_city }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="carrier_cost_per_km[]" value="{{ c.cost_per_km }}"></td>
+                  <td><input class="form-control form-control-sm mini-input" name="carrier_reliability[]" value="{{ c.reliability }}"></td>
+                  <td>
+                    <select class="form-select form-select-sm mini-input" name="carrier_tracking[]">
+                      <option value="true" {% if c.tracking %}selected{% endif %}>Да</option>
+                      <option value="false" {% if not c.tracking %}selected{% endif %}>Нет</option>
+                    </select>
+                  </td>
+                  <td><input class="form-control form-control-sm mini-input" name="carrier_speed_kmh[]" value="{{ c.speed_kmh }}"></td>
+                  <td><button class="btn btn-sm btn-outline-danger" type="button" onclick="removeRow(this)">×</button></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <div class="d-flex gap-2 mb-4">
+        <button class="btn btn-primary" type="submit">Рассчитать</button>
+        <button class="btn btn-outline-secondary" type="submit" name="load_defaults" value="1">Загрузить пример</button>
+      </div>
+    </form>
+
+    {% if results %}
+    <section class="card section-card mb-4">
+      <div class="card-body">
+        <h2 class="h4">Итоговый план поставки</h2>
+        <div class="row g-3 mb-3">
+          <div class="col-md-3"><div class="metric"><span>Суммарная стоимость</span><strong>{{ results.summary.total_cost_rub }} руб.</strong></div></div>
+          <div class="col-md-3"><div class="metric"><span>Полная стоимость фур</span><strong>{{ results.summary.total_full_truck_cost_rub }} руб.</strong></div></div>
+          <div class="col-md-3"><div class="metric"><span>Фуры</span><strong>{{ results.summary.total_trucks }}</strong></div></div>
+          <div class="col-md-3"><div class="metric"><span>Бюджет</span><strong class="{% if results.summary.budget_ok %}text-success{% else %}text-danger{% endif %}">{{ 'OK' if results.summary.budget_ok else 'Превышен' }}</strong></div></div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-striped align-middle">
+            <thead><tr><th>Продукт</th><th>Связка</th><th>Стоимость</th><th>Время</th><th>Надежность</th><th>Расстояние</th><th>TOPSIS</th></tr></thead>
+            <tbody>
+              {% for row in results.best_plan %}
+              <tr>
+                <td>{{ row.product }}</td>
+                <td>{{ row.supplier_name }}</td>
+                <td>{{ row.alx_transport_cost_rub | round(2) }}</td>
+                <td>{{ row.time_days }}</td>
+                <td>{{ row.composite_reliability }}</td>
+                <td>{{ row.distance_km }}</td>
+                <td><strong>{{ row.score }}</strong></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if results.missing_products %}
+        <div class="alert alert-warning">Нет допустимых альтернатив для: {{ results.missing_products | join(', ') }}</div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="card section-card mb-4">
+      <div class="card-body">
+        <h2 class="h4">Веса критериев</h2>
+        <div class="row g-3">
+          {% for label, weight in results.weight_pairs %}
+          <div class="col-md-3"><div class="metric"><span>{{ label }}</span><strong>{{ '%.4f'|format(weight) }}</strong></div></div>
+          {% endfor %}
+        </div>
+        {% if results.ahp_info %}
+        <p class="text-muted mt-3 mb-0">AHP: λmax={{ '%.4f'|format(results.ahp_info.lambda_max) }}, CI={{ '%.4f'|format(results.ahp_info.ci) }}, CR={{ '%.4f'|format(results.ahp_info.cr) }}</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="card section-card mb-4">
+      <div class="card-body">
+        <h2 class="h4">Ранжирование по продуктам</h2>
+        {% for product, rows in results.ranked.items() %}
+        <h3 class="h5 mt-3">{{ product }}</h3>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle">
+            <thead><tr><th>#</th><th>Связка</th><th>Стоимость</th><th>Время</th><th>Надежность</th><th>Расстояние</th><th>TOPSIS</th></tr></thead>
+            <tbody>
+              {% for row in rows %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ row.supplier_name }}</td>
+                <td>{{ row.alx_transport_cost_rub | round(2) }}</td>
+                <td>{{ row.time_days }}</td>
+                <td>{{ row.composite_reliability }}</td>
+                <td>{{ row.distance_km }}</td>
+                <td>{{ row.score }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="card section-card mb-4">
+      <div class="card-body">
+        <h2 class="h4">Карта маршрутов</h2>
+        {% if api_key %}
+        <div id="map"></div>
+        {% else %}
+        <div class="map-placeholder">Для отображения интерактивной карты укажите переменную окружения YANDEX_API_KEY.</div>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  {% if api_key %}
+  <script>
+    window.mapData = {
+      customer: {{ customer_map|safe }},
+      factories: {{ factories_map|safe }},
+      routes: {{ routes_map|safe }}
+    };
+    initYandexMap(window.mapData);
+  </script>
+  {% endif %}
+</body>
+</html>

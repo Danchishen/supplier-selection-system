@@ -1,0 +1,4 @@
+name,base_city,cost_per_km,reliability,tracking,speed_kmh
+TransLogist,Nizhny Novgorod,45,98,true,80
+UralTrans,Yekaterinburg,48,96,true,80
+CenterGruz,Moscow,50,97,true,80

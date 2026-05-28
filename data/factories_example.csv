@@ -1,0 +1,4 @@
+manufacturer,product,city,address,lat,lon,distance_km,transport_time_days,weekly_quantity_units,unit_weight_kg,unit_volume_m3,manufacturer_reliability,purchase_price_per_unit,shipping_window
+ElectroMotor,Motor,Nizhny Novgorod,"Promyshlennaya st., 15",56.2965,43.9361,420,0.5,1000,5,0.03,98,2500,"Mon-Fri, 09:00-17:00"
+KholodTech,Compressor,Kazan,"Zavodskoy ave., 42",55.8304,49.0661,820,1.0,800,12,0.15,97,4200,"Tue-Sat, 08:00-16:00"
+PlastikProm,Panel,Yekaterinburg,"Metallurgov st., 78",56.8389,60.6057,1800,2.0,2000,3,0.20,96,1200,"Mon-Fri, 10:00-18:00"

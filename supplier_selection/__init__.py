@@ -1,0 +1,1 @@
+"""Supplier selection system package."""
